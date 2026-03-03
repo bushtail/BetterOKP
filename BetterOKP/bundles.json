@@ -1,0 +1,14 @@
+﻿{
+    "manifest": [
+        {
+            "key": "scope_all_ekb_okp7_chevron.bundle",
+            "dependencyKeys": [
+                "assets/commonassets/physics/physicsmaterials.bundle",
+                "assets/content/textures/holemanager/round_spec_mask.bundle",
+                "assets/systems/effects/collimator.bundle",
+                "cubemaps",
+                "shaders"
+            ]
+        }
+    ]
+}
