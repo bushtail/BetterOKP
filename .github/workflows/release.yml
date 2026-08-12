@@ -22,24 +22,10 @@ jobs:
       - name: Extract mod metadata
         id: extract
         run: |
-          # Extract metadata from ModMetadata implementation
           MODGUID=$(grep -rPho -h 'ModGuid\s*{\s*[^}]*}\s*=\s*"\K[^"]+' . --include \*.cs | head -n 1)
           MOD_NAME=$(grep -rPho -h 'Name\s*{\s*[^}]*}\s*=\s*"\K[^"]+' . --include \*.cs | head -n 1)
           AUTHOR=$(grep -rPho -h 'Author\s*{\s*[^}]*}\s*=\s*"\K[^"]+' . --include \*.cs | head -n 1)
-
-          # Version from csproj
           VERSION=$(grep -rPo '<Version>(.*?)</Version>' **/*.csproj | sed -E 's/.*>(.*)<.*/\1/' | head -n 1)
-
-          echo "Extracted values:"
-          echo "ModGuid: $MODGUID"
-          echo "Name: $MOD_NAME"
-          echo "Author: $AUTHOR"
-          echo "Version: $VERSION"
-
-          if [ -z "$MOD_NAME" ] || [ -z "$AUTHOR" ] || [ -z "$VERSION" ]; then
-            echo "Missing metadata — failing early"
-            exit 1
-          fi
 
           echo "MODGUID=$MODGUID" >> $GITHUB_ENV
           echo "MOD_NAME=$MOD_NAME" >> $GITHUB_ENV
@@ -54,63 +40,40 @@ jobs:
 
       - name: Package mod folder
         run: |
-          # Locate Release output directory
           OUTDIR=$(find . -type d -path "*/bin/Release*" | head -n 1)
-          if [ -z "$OUTDIR" ]; then
-            echo "No Release output folder found"
-            exit 1
-          fi
-
-          # Locate inner build output folder (contains DLLs)
           INNER=$(find "$OUTDIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-          if [ -z "$INNER" ]; then
-            echo "No inner build output folder found"
-            exit 1
-          fi
 
           TARGET="package/SPT_Runtime/user/mods/$AUTHOR-$MOD_NAME"
-          echo "Packaging mod into $TARGET"
           mkdir -p "$TARGET"
 
           # Copy DLLs
-          DLLS=$(find "$INNER" -maxdepth 1 -type f -name "*.dll")
-          if [ -z "$DLLS" ]; then
-            echo "No DLLs found in build output"
-            exit 1
-          fi
-          rsync -av $DLLS "$TARGET/"
+          rsync -av "$INNER/"*.dll "$TARGET/"
 
-          # Copy Resources folder contents if present
-          RESOURCES_DIR=$(find . -maxdepth 2 -type d -name "Resources" | head -n 1)
+          # Detect Resources folder (correct depth)
+          RESOURCES_DIR=$(find . -maxdepth 3 -type d -name "Resources" | head -n 1)
+
           if [ -n "$RESOURCES_DIR" ]; then
-            echo "Resources folder found — copying contents"
+            echo "Resources found at $RESOURCES_DIR"
 
-            # Create known subfolders so rsync never fails
-            mkdir -p "$TARGET/db"
-            mkdir -p "$TARGET/bundles"
+            # Copy all subfolders inside Resources
+            for SUB in "$RESOURCES_DIR"/*; do
+              if [ -d "$SUB" ]; then
+                NAME=$(basename "$SUB")
+                mkdir -p "$TARGET/$NAME"
+                rsync -av "$SUB/" "$TARGET/$NAME/"
+              fi
+            done
 
-            # Copy db/
-            if [ -d "$RESOURCES_DIR/db" ]; then
-              rsync -av "$RESOURCES_DIR/db/" "$TARGET/db/"
-            fi
-
-            # Copy bundles/
-            if [ -d "$RESOURCES_DIR/bundles" ]; then
-              rsync -av "$RESOURCES_DIR/bundles/" "$TARGET/bundles/"
-            fi
-
-            # Copy bundles.json
+            # Copy bundles.json if present
             if [ -f "$RESOURCES_DIR/bundles.json" ]; then
               rsync -av "$RESOURCES_DIR/bundles.json" "$TARGET/"
             fi
-
           else
-            echo "No Resources folder found — skipping Resources packaging"
+            echo "No Resources folder found"
           fi
 
       - name: Zip mod folder
         run: |
-          mkdir -p package
           cd package
           zip -r "${AUTHOR}-${MOD_NAME}_v${VERSION}.zip" SPT_Runtime
 
@@ -137,11 +100,6 @@ jobs:
       - name: Extract tag name from zip
         run: |
           ZIPFILE=$(find mod_package -type f -name "*.zip" | head -n 1)
-          if [ -z "$ZIPFILE" ]; then
-            echo "No zip file found in mod_package"
-            exit 1
-          fi
-
           BASENAME=$(basename "$ZIPFILE")
           TAGNAME=$(echo "$BASENAME" | grep -oP '_v\K[0-9]+\.[0-9]+\.[0-9]+')
 
